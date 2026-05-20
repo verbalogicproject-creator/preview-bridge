@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>preview-bridge host</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0d1117;color:#c9d1d9}
+  .top{display:flex;align-items:center;gap:12px;padding:8px 12px;background:#161b22;border-bottom:1px solid #21262d;font-size:13px}
+  .top input{flex:1;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:6px 8px;border-radius:6px;font:inherit}
+  .top button{background:#238636;color:#fff;border:0;padding:6px 12px;border-radius:6px;font:inherit;cursor:pointer}
+  .top button:hover{background:#2ea043}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#8b949e}
+  .dot{width:8px;height:8px;border-radius:50%;background:#f85149}
+  .dot.connected{background:#3fb950}
+  .frame{height:calc(100% - 41px);width:100%;border:0;background:#fff}
+  .hint{padding:24px;color:#8b949e;font-size:13px;line-height:1.6}
+  .hint code{background:#161b22;padding:2px 6px;border-radius:4px;color:#c9d1d9}
+</style>
+</head>
+<body>
+<div class="top">
+  <span class="status"><span class="dot" id="dot"></span><span id="status">disconnected</span></span>
+  <input id="appUrl" placeholder="https://your-app.example.com" />
+  <button id="loadBtn">Load</button>
+</div>
+<div id="container" style="height:calc(100% - 41px)">
+  <div id="hint" class="hint">
+    <p><strong>preview-bridge host</strong></p>
+    <p>This page wraps another URL in an iframe.
+       The iframe's events flow into the bridge's MCP server so Claude Code can see them.</p>
+    <p>Enter a URL above and click Load. Or use bring-your-own-page mode by adding
+       <code>&lt;script src="http://127.0.0.1:5250/__bridge.js"&gt;&lt;/script&gt;</code> to your own page directly.</p>
+    <p>This page opens a WebSocket to <code>ws://127.0.0.1:5251</code> and forwards events from the iframe to the bridge.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const HTTP_PORT = 5250;
+  const WS_PORT = 5251;
+  const params = new URLSearchParams(location.search);
+  const initialApp = params.get("app");
+
+  const $ = (id) => document.getElementById(id);
+  const dot = $("dot"), statusEl = $("status"), appInput = $("appUrl"), btn = $("loadBtn"), container = $("container");
+  let ws = null;
+  let iframe = null;
+  let previewUrl = null;
+  const eventQueue = [];
+
+  function openWs() {
+    try { ws = new WebSocket(`ws://127.0.0.1:${WS_PORT}`); }
+    catch { setStatus(false); setTimeout(openWs, 2000); return; }
+
+    ws.addEventListener("open", () => {
+      setStatus(true);
+      ws.send(JSON.stringify({ type: "hello", mode: "hosted-iframe", previewUrl: previewUrl || null }));
+      while (eventQueue.length) ws.send(JSON.stringify({ type: "event", event: eventQueue.shift() }));
+    });
+
+    ws.addEventListener("message", (msg) => {
+      let m; try { m = JSON.parse(msg.data); } catch { return; }
+      if (m && m.type === "request-state-snapshot" && iframe && iframe.contentWindow) {
+        try {
+          iframe.contentWindow.postMessage({ __previewBridge: true, type: "request-state-snapshot", reqId: m.reqId, kind: m.kind }, "*");
+        } catch {}
+      }
+    });
+
+    ws.addEventListener("close", () => { setStatus(false); ws = null; setTimeout(openWs, 2000); });
+    ws.addEventListener("error", () => { /* close will trigger reconnect */ });
+  }
+
+  function setStatus(connected) {
+    dot.classList.toggle("connected", !!connected);
+    statusEl.textContent = connected ? "connected to relay" : "disconnected";
+  }
+
+  // Relay events from the iframe to the bridge over WS
+  window.addEventListener("message", (ev) => {
+    const m = ev.data;
+    if (!m || !m.__previewBridge) return;
+
+    if (m.type === "event" && m.event && ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: "event", event: m.event })); } catch {}
+    } else if (m.type === "event" && m.event) {
+      eventQueue.push(m.event);
+      if (eventQueue.length > 100) eventQueue.shift();
+    }
+
+    if (m.type === "state-snapshot" && ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: "state-snapshot", reqId: m.reqId, snapshot: m.snapshot })); } catch {}
+    }
+  });
+
+  function clearContainer() {
+    while (container.firstChild) container.removeChild(container.firstChild);
+  }
+
+  function load(url) {
+    if (!url) return;
+    previewUrl = url;
+    clearContainer();
+    iframe = document.createElement("iframe");
+    iframe.className = "frame";
+    iframe.style.cssText = "width:100%;height:100%;border:0;background:#fff";
+    iframe.setAttribute("referrerpolicy", "no-referrer");
+    // For cross-origin URLs the host page cannot inject __bridge.js into the iframe directly.
+    // The user must include <script src="http://127.0.0.1:5250/__bridge.js"> in their app's page itself.
+    // The README documents both modes; this iframe-wrapper is only useful for apps that already include __bridge.js.
+    iframe.src = url;
+    container.appendChild(iframe);
+
+    if (ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: "hello", mode: "hosted-iframe", previewUrl: previewUrl })); } catch {}
+    }
+  }
+
+  btn.addEventListener("click", () => load(appInput.value.trim()));
+  appInput.addEventListener("keydown", (e) => { if (e.key === "Enter") load(appInput.value.trim()); });
+
+  if (initialApp) {
+    appInput.value = initialApp;
+    load(initialApp);
+  }
+
+  openWs();
+})();
+</script>
+</body>
+</html>

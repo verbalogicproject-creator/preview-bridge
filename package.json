@@ -1,0 +1,26 @@
+{
+  "name": "preview-bridge-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing live browser-preview state (errors, form values, console, clicks, route) to Claude Code via a local WebSocket relay.",
+  "type": "module",
+  "bin": {
+    "preview-bridge-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "ws": "^8.18.0",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/ws": "^8.5.13",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
