@@ -184,3 +184,42 @@ Spawns the MCP, opens a simulated WS client, asserts all 5 tools respond correct
 - Ring-buffer + pub/sub primitive ported from ARIA's `RingBufferLogger`
 - MCP server skeleton mirrors `gemini-expert/mcp-server/`
 - Event-taxonomy philosophy inspired by Background Studio's functional-journey logging
+
+---
+
+## Multiple Claude Code sessions (leader / follower)
+
+Claude Code spawns **one MCP child process per session**, but this server owns
+two fixed ports and there is only ever **one browser page** being observed. So
+instances elect a role at startup:
+
+| Role | Owns | Answers tools by |
+|---|---|---|
+| `leader` | the WebSocket relay + HTTP host + the 500-entry event ring | reading its own ring |
+| `follower` | nothing | asking the leader over HTTP (`/events`, `/errors`, `/session`, `/preview-state`, `/tail`) |
+
+A follower's answers are the leader's answers — same ring, same page. `get_session_info`
+reports the leader's state and stamps `via: {role:"follower", pid}` so the two are
+never confused.
+
+**What this fixes.** Before, the second session's child hit `EADDRINUSE`, called
+`process.exit(1)`, and Claude Code reported only *"Connection closed"* — a totally
+deterministic failure that looked like a flaky server and never recovered while
+the first session lived.
+
+Two further guarantees:
+
+- **A follower promotes itself.** It polls the leader every 5s; when the leader's
+  session ends, the follower binds the ports and takes over.
+- **A leader dies with its client.** The process now exits on stdin EOF, not just
+  on SIGINT/SIGTERM. Previously a client that closed the pipe without signalling
+  left a live process holding both ports with *nothing attached to it*, which
+  poisoned every future session permanently. This was the actual outage.
+
+A follower refuses to proxy to a service that does not identify itself as
+`preview-bridge` on `/health` — forwarding your questions to some other project's
+dev server that happens to hold port 5250 would be worse than failing.
+
+```bash
+npm run test:multi     # spawns a leader + follower on 5352/5353 and asserts all of the above
+```

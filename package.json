@@ -10,7 +10,8 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "test:multi": "node scripts/multi-session.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
