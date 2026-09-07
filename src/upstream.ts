@@ -41,6 +41,7 @@ export async function probeUpstream(timeoutMs = 1500): Promise<UpstreamIdentity 
     const body = (await res.json()) as Record<string, unknown>;
     if (body.ok !== true) return null;
     if (body.service === "preview-bridge") {
+      leaderVersion = typeof body.version === "string" ? body.version : "unknown";
       return {
         service: "preview-bridge",
         version: typeof body.version === "string" ? body.version : "unknown",
@@ -49,6 +50,7 @@ export async function probeUpstream(timeoutMs = 1500): Promise<UpstreamIdentity 
     }
     // Legacy leader: {ok:true, connections:<number>} and nothing else.
     if (typeof body.connections === "number") {
+      leaderVersion = "legacy";
       return { service: "preview-bridge", version: "legacy", pid: null };
     }
     return null;
@@ -57,7 +59,27 @@ export async function probeUpstream(timeoutMs = 1500): Promise<UpstreamIdentity 
   }
 }
 
-export class UpstreamError extends Error {}
+export class UpstreamError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
+
+/*
+ * The leader's version, remembered from the last probe.
+ *
+ * This exists to keep one specific lie out of the error messages. A leader
+ * built before follower support answers /health but 404s every follower
+ * endpoint, and reporting that as "the leader stopped answering, promotion is
+ * coming" is precisely wrong twice over: it IS answering, and promotion will
+ * never happen because the port stays held. An error that misdescribes the
+ * cause is worse than a bare 404, because it sends the reader somewhere else.
+ */
+let leaderVersion: string | null = null;
+
+export function isLegacyLeader(): boolean {
+  return leaderVersion === "legacy";
+}
 
 /** GET a JSON endpoint on the leader. Throws UpstreamError; never returns junk. */
 export async function upstreamGet(
@@ -79,7 +101,10 @@ export async function upstreamGet(
     );
   }
   if (!res.ok) {
-    throw new UpstreamError(`leader returned HTTP ${res.status} for ${url.pathname}`);
+    throw new UpstreamError(
+      `leader returned HTTP ${res.status} for ${url.pathname}`,
+      res.status,
+    );
   }
   try {
     return await res.json();
@@ -94,14 +119,22 @@ export async function upstreamGet(
  * nothing about WHY, and "the bridge moved" is exactly the thing worth saying.
  */
 export function upstreamFailure(err: unknown): Record<string, unknown> {
+  const stale = err instanceof UpstreamError && err.status === 404 && isLegacyLeader();
   return {
     ok: false,
     error: err instanceof Error ? err.message : "unknown upstream error",
     role: "follower",
     bridgeVersion: BRIDGE_VERSION,
-    hint:
-      "This session is a follower of another preview-bridge instance that has " +
-      "stopped answering. It will promote itself to leader within a few seconds; " +
-      "retry the call.",
+    leaderVersion: leaderVersion ?? "unknown",
+    hint: stale
+      ? "The preview-bridge instance holding the ports is an OLDER BUILD that " +
+        "predates follower support, so it answers /health but not the endpoints " +
+        "a follower reads. It will not promote on its own, because it is alive " +
+        "and holding the ports. Restart it — end the other Claude Code session " +
+        "using preview-bridge, or stop that process — and this instance takes " +
+        "over within 5 seconds. Nothing needs reconfiguring."
+      : "This session is a follower of another preview-bridge instance that has " +
+        "stopped answering. It will promote itself to leader within a few seconds; " +
+        "retry the call.",
   };
 }
