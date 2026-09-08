@@ -15,14 +15,14 @@
     "test:multi": "node scripts/multi-session.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0",
-    "zod": "latest"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "latest",
+    "@types/node": "^25.9.1",
     "@types/ws": "^8.5.13",
-    "tsx": "latest",
-    "typescript": "latest"
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
   }
 }
