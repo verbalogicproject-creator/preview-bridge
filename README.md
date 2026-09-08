@@ -37,20 +37,28 @@ Claude Code ── MCP stdio ──> preview-bridge MCP server (Node)
 
 ## Install
 
-```bash
-cd ~/preview-bridge
-npm install
+Requires Node.js 20 or newer.
+
+```sh
+git clone https://github.com/verbalogicproject-creator/preview-bridge.git
+cd preview-bridge
+npm ci
 npm run build
+npm run smoke
+npm run test:multi
 ```
 
-Then add to your Claude Code MCP config (e.g. `~/.claude.json`):
+The smoke test reports 17 passing assertions; the multi-session test reports
+8 more. Then add the built server to your Claude Code MCP config (for example,
+`~/.claude.json`), replacing `/absolute/path/to/preview-bridge` with this
+checkout's absolute path:
 
 ```json
 {
   "mcpServers": {
     "preview-bridge": {
       "command": "node",
-      "args": ["/data/data/com.termux/files/home/preview-bridge/dist/index.js"],
+      "args": ["/absolute/path/to/preview-bridge/dist/index.js"],
       "env": {
         "PREVIEW_BRIDGE_HTTP_PORT": "5250",
         "PREVIEW_BRIDGE_RELAY_PORT": "5251"
@@ -153,11 +161,12 @@ The ring buffer is in-memory only; nothing persists across MCP restarts. Events 
 
 ## Tests
 
-```bash
+```sh
 npm run smoke
+npm run test:multi
 ```
 
-Spawns the MCP, opens a simulated WS client, asserts all 5 tools respond correctly + the state-snapshot round-trip + long-poll + ring-buffer filtering. Targets: 17 assertions across 10 test groups.
+The smoke suite spawns the MCP, opens a simulated WebSocket client, and checks all five tools plus state snapshots, long-polling, and ring-buffer filtering. The multi-session suite verifies leader/follower proxying and promotion.
 
 ---
 
@@ -219,7 +228,3 @@ Two further guarantees:
 A follower refuses to proxy to a service that does not identify itself as
 `preview-bridge` on `/health` — forwarding your questions to some other project's
 dev server that happens to hold port 5250 would be worse than failing.
-
-```bash
-npm run test:multi     # spawns a leader + follower on 5352/5353 and asserts all of the above
-```

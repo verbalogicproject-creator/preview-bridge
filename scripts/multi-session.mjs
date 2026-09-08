@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
-import { WebSocket } from '/data/data/com.termux/files/home/preview-bridge/node_modules/ws/wrapper.mjs';
-const BIN = '/data/data/com.termux/files/home/preview-bridge/dist/index.js';
+import { fileURLToPath } from 'node:url';
+import { WebSocket } from 'ws';
+
+const BIN = fileURLToPath(new URL('../dist/index.js', import.meta.url));
 const ENV = { ...process.env, PREVIEW_BRIDGE_HTTP_PORT: '5352', PREVIEW_BRIDGE_RELAY_PORT: '5353' };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

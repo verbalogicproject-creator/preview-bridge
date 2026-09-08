@@ -2,6 +2,7 @@
   "name": "preview-bridge-mcp",
   "version": "0.1.0",
   "description": "MCP server exposing live browser-preview state (errors, form values, console, clicks, route) to Claude Code via a local WebSocket relay.",
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "preview-bridge-mcp": "./dist/index.js"
